@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import FacebookLogin from 'react-facebook-login';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 
 function App() {
+  const [isSdkLoaded, setIsSdkLoaded] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [accessToken, setAccessToken] = useState('');
   const [pages, setPages] = useState([]);
@@ -15,25 +15,64 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  const responseFacebook = async (response) => {
-    if (response.accessToken) {
-      setAccessToken(response.accessToken);
-      setIsLoggedIn(true);
-      setMessage('Login effettuato con successo!');
-      // Recupera le pagine gestite
-      try {
-        const res = await axios.get(
-          `https://graph.facebook.com/v18.0/me/accounts?fields=name,id,access_token&access_token=${response.accessToken}`
-        );
-        console.log('Pagine ricevute:', res.data);
-        setPages(res.data.data);
-        if (res.data.data.length > 0) {
-          setSelectedPage(res.data.data[0].id);
-          setPageAccessToken(res.data.data[0].access_token);
+  // Carica l'SDK Facebook
+  useEffect(() => {
+    if (window.FB) {
+      setIsSdkLoaded(true);
+      return;
+    }
+    window.fbAsyncInit = function () {
+      window.FB.init({
+        appId: '683283957808938',
+        cookie: true,
+        xfbml: false,
+        version: 'v18.0',
+      });
+      setIsSdkLoaded(true);
+    };
+    (function (d, s, id) {
+      var js, fjs = d.getElementsByTagName(s)[0];
+      if (d.getElementById(id)) { return; }
+      js = d.createElement(s); js.id = id;
+      js.src = "https://connect.facebook.net/it_IT/sdk.js";
+      fjs.parentNode.insertBefore(js, fjs);
+    }(document, 'script', 'facebook-jssdk'));
+  }, []);
+
+  // Login con Facebook
+  const handleFBLogin = () => {
+    if (!window.FB) return;
+    window.FB.login(
+      function (response) {
+        if (response.authResponse) {
+          setAccessToken(response.authResponse.accessToken);
+          setIsLoggedIn(true);
+          setMessage('Login effettuato con successo!');
+          fetchPages(response.authResponse.accessToken);
+        } else {
+          setMessage('Login annullato o non autorizzato.');
         }
-      } catch (err) {
-        setMessage('Errore nel recupero delle pagine: ' + err.message);
+      },
+      {
+        scope: 'public_profile,email,pages_manage_posts,pages_read_engagement,pages_show_list,pages_manage_engagement',
+        return_scopes: true,
       }
+    );
+  };
+
+  // Recupera le pagine gestite
+  const fetchPages = async (token) => {
+    try {
+      const res = await axios.get(
+        `https://graph.facebook.com/v18.0/me/accounts?fields=name,id,access_token&access_token=${token}`
+      );
+      setPages(res.data.data);
+      if (res.data.data.length > 0) {
+        setSelectedPage(res.data.data[0].id);
+        setPageAccessToken(res.data.data[0].access_token);
+      }
+    } catch (err) {
+      setMessage('Errore nel recupero delle pagine: ' + err.message);
     }
   };
 
@@ -113,14 +152,13 @@ function App() {
       <header className="App-header">
         <h1>Facebook Publisher</h1>
         {!isLoggedIn ? (
-          <FacebookLogin
-            appId="683283957808938"
-            autoLoad={false}
-            fields="name,email,picture"
-            callback={responseFacebook}
-            textButton="Accedi con Facebook"
-            scope="public_profile,email,pages_manage_posts,pages_read_engagement,pages_show_list,pages_manage_engagement"
-          />
+          <button
+            className="kep-login-facebook"
+            onClick={handleFBLogin}
+            disabled={!isSdkLoaded}
+          >
+            Accedi con Facebook
+          </button>
         ) : (
           <form onSubmit={handleSubmit} className="post-form">
             {pages.length > 0 && (
